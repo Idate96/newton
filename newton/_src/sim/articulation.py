@@ -935,11 +935,13 @@ def eval_articulation_jacobian(
     joint_type: wp.array(dtype=int),
     joint_parent: wp.array(dtype=int),
     joint_ancestor: wp.array(dtype=int),
+    joint_child: wp.array(dtype=int),
     joint_qd_start: wp.array(dtype=int),
     joint_X_p: wp.array(dtype=wp.transform),
     joint_axis: wp.array(dtype=wp.vec3),
     joint_dof_dim: wp.array(dtype=int, ndim=2),
     body_q: wp.array(dtype=wp.transform),
+    body_com: wp.array(dtype=wp.vec3),
     # outputs
     J: wp.array3d(dtype=float),
     joint_S_s: wp.array(dtype=wp.spatial_vector),
@@ -996,8 +998,12 @@ def eval_articulation_jacobian(
     # Second pass: build Jacobian by walking kinematic chain
     for i in range(joint_count):
         row_start = i * 6
+        row_joint = joint_start + i
+        row_child = joint_child[row_joint]
+        X_wc = body_q[row_child]
+        com_world = wp.transform_point(X_wc, body_com[row_child])
 
-        j = joint_start + i
+        j = row_joint
         while j != -1:
             joint_dof_start = joint_qd_start[j]
             joint_dof_end = joint_qd_start[j + 1]
@@ -1007,9 +1013,15 @@ def eval_articulation_jacobian(
             for dof in range(joint_dof_count):
                 col = (joint_dof_start - articulation_dof_start) + dof
                 S = joint_S_s[joint_dof_start + dof]
+                omega = wp.spatial_bottom(S)
+                v_com = wp.spatial_top(S) + wp.cross(omega, com_world)
 
-                for k in range(6):
-                    J[art_idx, row_start + k, col] = S[k]
+                J[art_idx, row_start + 0, col] = v_com[0]
+                J[art_idx, row_start + 1, col] = v_com[1]
+                J[art_idx, row_start + 2, col] = v_com[2]
+                J[art_idx, row_start + 3, col] = omega[0]
+                J[art_idx, row_start + 4, col] = omega[1]
+                J[art_idx, row_start + 5, col] = omega[2]
 
             j = joint_ancestor[j]
 
@@ -1023,9 +1035,10 @@ def eval_jacobian(
 ) -> wp.array | None:
     """Evaluate spatial Jacobian for articulations.
 
-    Computes the spatial Jacobian J that maps joint velocities to spatial
-    velocities of each link in world frame. The Jacobian is computed for
-    each articulation in the model.
+    Computes the spatial Jacobian J that maps joint velocities to the same
+    per-body spatial twists stored in :attr:`newton.State.body_qd`: linear
+    velocity at the body COM in world frame and angular velocity in world
+    frame. The Jacobian is computed for each articulation in the model.
 
     Args:
         model: The model containing articulation definitions.
@@ -1075,11 +1088,13 @@ def eval_jacobian(
             model.joint_type,
             model.joint_parent,
             model.joint_ancestor,
+            model.joint_child,
             model.joint_qd_start,
             model.joint_X_p,
             model.joint_axis,
             model.joint_dof_dim,
             state.body_q,
+            model.body_com,
         ],
         outputs=[J, joint_S_s],
         device=model.device,

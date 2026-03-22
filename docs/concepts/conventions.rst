@@ -112,6 +112,8 @@ unlike Warp's native ``(angular, linear)`` convention. This applies to arrays
 such as :attr:`newton.State.body_qd` and :attr:`newton.State.body_f`.
 Newton's :attr:`State.body_qd <newton.State.body_qd>` stores **both** linear and angular velocities
 in the world frame.
+The corresponding :attr:`State.body_q <newton.State.body_q>` pose remains the body/frame-origin pose in world coordinates,
+not a COM pose.
 
 .. code-block:: python
 

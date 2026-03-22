@@ -70,7 +70,10 @@ class State:
         """3D forces on particles [N], shape (particle_count,), dtype :class:`vec3`."""
 
         self.body_q: wp.array | None = None
-        """Rigid body transforms (7-DOF) [m, unitless quaternion], shape (body_count,), dtype :class:`transform`."""
+        """Rigid body transforms of the body-frame origins (7-DOF) [m, unitless quaternion], shape (body_count,), dtype :class:`transform`.
+
+        The translation stored in :attr:`body_q` is the body/frame origin in world coordinates, not the body center of mass (COM).
+        """
 
         self.body_qd: wp.array | None = None
         """Rigid body velocities (spatial) [m/s, rad/s], shape (body_count,), dtype :class:`spatial_vector`.

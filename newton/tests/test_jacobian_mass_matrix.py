@@ -538,6 +538,61 @@ def test_floating_base_jacobian(test, device):
     np.linalg.cholesky(H_valid)
 
 
+def test_jacobian_matches_fk_body_qd_for_translated_chain(test, device):
+    """Verify that J @ qd reproduces FK body_qd for translated-joint chains."""
+    builder = newton.ModelBuilder(gravity=0.0, up_axis=newton.Axis.Y)
+
+    base = builder.add_link(mass=1.0)
+    slider = builder.add_link(mass=1.0)
+
+    builder.body_com[base] = wp.vec3(0.2, -0.1, 0.05)
+    builder.body_com[slider] = wp.vec3(0.35, 0.0, -0.1)
+
+    j0 = builder.add_joint_revolute(
+        parent=-1,
+        child=base,
+        axis=newton.Axis.Z,
+        parent_xform=wp.transform(wp.vec3(0.0, 0.0, 0.0), wp.quat_identity()),
+        child_xform=wp.transform(wp.vec3(0.05, 0.0, 0.0), wp.quat_identity()),
+    )
+    j1 = builder.add_joint_prismatic(
+        parent=base,
+        child=slider,
+        axis=newton.Axis.X,
+        parent_xform=wp.transform(wp.vec3(1.0, 0.1, 0.4), wp.quat_identity()),
+        child_xform=wp.transform(wp.vec3(0.2, -0.15, -0.1), wp.quat_identity()),
+    )
+    builder.add_articulation([j0, j1], label="translated_chain")
+
+    model = builder.finalize(device=device)
+    state = model.state()
+
+    q = state.joint_q.numpy()
+    qd = state.joint_qd.numpy()
+    joint_q_start = model.joint_q_start.numpy()
+    joint_qd_start = model.joint_qd_start.numpy()
+
+    q[joint_q_start[0]] = 0.55
+    q[joint_q_start[1]] = 0.8
+    qd[joint_qd_start[0]] = 1.1
+    qd[joint_qd_start[1]] = -0.35
+
+    state.joint_q.assign(q)
+    state.joint_qd.assign(qd)
+    newton.eval_fk(model, state.joint_q, state.joint_qd, state)
+
+    J = newton.eval_jacobian(model, state)
+    J_np = J.numpy()
+    body_qd_np = state.body_qd.numpy().reshape(-1, 6)
+
+    qd_valid = qd[: model.max_dofs_per_articulation]
+
+    for row_idx, body_idx in enumerate((base, slider)):
+        row = J_np[0, row_idx * 6 : (row_idx + 1) * 6, : model.max_dofs_per_articulation]
+        predicted_qd = row @ qd_valid
+        np.testing.assert_allclose(predicted_qd, body_qd_np[body_idx], rtol=1.0e-5, atol=1.0e-5)
+
+
 class TestJacobianMassMatrix(unittest.TestCase):
     pass
 
@@ -571,6 +626,12 @@ add_function_test(
 add_function_test(TestJacobianMassMatrix, "test_empty_model", test_empty_model, devices=devices)
 add_function_test(TestJacobianMassMatrix, "test_articulation_view_api", test_articulation_view_api, devices=devices)
 add_function_test(TestJacobianMassMatrix, "test_floating_base_jacobian", test_floating_base_jacobian, devices=devices)
+add_function_test(
+    TestJacobianMassMatrix,
+    "test_jacobian_matches_fk_body_qd_for_translated_chain",
+    test_jacobian_matches_fk_body_qd_for_translated_chain,
+    devices=devices,
+)
 
 
 if __name__ == "__main__":
