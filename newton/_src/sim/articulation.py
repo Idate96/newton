@@ -1146,12 +1146,11 @@ def compute_body_spatial_inertia(
     # outputs
     body_I_s: wp.array(dtype=wp.spatial_matrix),
 ):
-    """Compute spatial inertia for each body in world frame."""
+    """Compute COM-referenced spatial inertia for each body in world frame."""
     tid = wp.tid()
 
     I_local = body_inertia[tid]
     m = body_mass[tid]
-    com = body_com[tid]
     X_wb = body_q[tid]
 
     # Build spatial inertia in body COM frame
@@ -1166,10 +1165,12 @@ def compute_body_spatial_inertia(
     )
     # fmt: on
 
-    # Transform from COM frame to world frame
-    X_com = wp.transform(com, wp.quat_identity())
-    X_sm = X_wb * X_com
-    I_s = transform_spatial_inertia(X_sm, I_m)
+    # Rotate from body COM frame into world frame while preserving the COM as
+    # the reference point. The public Jacobian returned by eval_jacobian()
+    # maps to COM twists, so eval_mass_matrix() must use the matching
+    # COM-referenced spatial inertia rather than a world-origin-shifted inertia.
+    X_wm = wp.transform(wp.vec3(), wp.transform_get_rotation(X_wb))
+    I_s = transform_spatial_inertia(X_wm, I_m)
 
     body_I_s[tid] = I_s
 
@@ -1249,6 +1250,11 @@ def eval_mass_matrix(
     Jacobian and M is the block-diagonal spatial mass matrix. The mass matrix
     relates joint accelerations to joint forces/torques.
 
+    The Jacobian is interpreted using the same public convention as
+    :func:`eval_jacobian`: each link row maps to the per-body spatial twist
+    stored in :attr:`newton.State.body_qd`, i.e. linear velocity at the body
+    COM in world frame plus angular velocity in world frame.
+
     Args:
         model: The model containing articulation definitions.
         state: The state containing body transforms (body_q).
@@ -1256,7 +1262,7 @@ def eval_mass_matrix(
            If None, allocates internally.
         J: Optional pre-computed Jacobian. If None, computes internally.
            Shape (articulation_count, max_links*6, max_dofs).
-        body_I_s: Optional pre-allocated temp array for spatial inertias,
+        body_I_s: Optional pre-allocated temp array for COM-referenced spatial inertias,
                   shape (body_count,), dtype wp.spatial_matrix. If None, allocates internally.
         joint_S_s: Optional pre-allocated temp array for motion subspaces (only used if J is None),
                    shape (joint_dof_count,), dtype wp.spatial_vector. If None, allocates internally.
