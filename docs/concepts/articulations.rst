@@ -23,7 +23,10 @@ For a floating-base articulation (one connected to the world by a free joint), t
 
 Maximal coordinates describe the configuration of an articulation in terms of the body link positions and velocities.
 Each rigid body's pose is represented by 7 parameters (3D position and XYZW quaternion) in :attr:`newton.State.body_q`,
-and its velocity by 6 parameters (3D linear and 3D angular) in :attr:`newton.State.body_qd`.
+where the translation is the body/frame origin in world coordinates. Its velocity is represented by 6 parameters
+(3D linear and 3D angular) in :attr:`newton.State.body_qd`, where the linear component is the body COM velocity in world coordinates.
+
+As a result, ``d/dt(state.body_q[..., :3])`` is not, in general, equal to ``state.body_qd[..., :3]`` when ``body_com != 0``.
 
 To convert between these two representations, we use forward and inverse kinematics:
 forward kinematics (:func:`newton.eval_fk`) converts generalized coordinates to maximal coordinates, and inverse kinematics (:func:`newton.eval_ik`) converts maximal coordinates to generalized coordinates.
