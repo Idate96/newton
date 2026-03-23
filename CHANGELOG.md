@@ -78,6 +78,7 @@
 - Implicit MPM solver now uses `mass=0` for kinematic particles instead of `ACTIVE` flag
 - Fix `get_tetmesh()` winding order for left-handed USD meshes
 - Fix contact force conversion in `SolverMuJoCo` to include friction (tangential) components
+- Fix forward-kinematics child-origin linear velocity for articulated translated joints
 
 ## [1.0.0] - 2026-03-10
 
