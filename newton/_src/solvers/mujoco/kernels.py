@@ -10,8 +10,8 @@ from typing import Any
 import warp as wp
 
 from ...core.types import vec5
+from ...math import velocity_at_point
 from ...sim import BodyFlags, EqType, JointTargetMode, JointType
-from ...sim.articulation import origin_twist_to_point_velocity
 
 
 def _import_contact_force_fn():
@@ -1060,7 +1060,9 @@ def eval_single_articulation_fk(
         if parent >= 0:
             v_wp = body_qd[parent]
             w_parent = wp.spatial_bottom(v_wp)
-            v_parent_origin = origin_twist_to_point_velocity(X_wp, v_wp, wp.transform_get_translation(X_wc))
+            v_parent_origin = velocity_at_point(
+                v_wp, wp.transform_get_translation(X_wc) - wp.transform_get_translation(X_wp)
+            )
 
         linear_joint_anchor = wp.transform_vector(X_wpj, wp.spatial_top(v_j))
         angular_joint_world = wp.transform_vector(X_wpj, wp.spatial_bottom(v_j))
