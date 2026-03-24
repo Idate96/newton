@@ -322,6 +322,9 @@ class SolverFeatherstone(SolverBase):
             target.body_f_s = wp.zeros(
                 (model.body_count,), dtype=wp.spatial_vector, device=model.device, requires_grad=requires_grad
             )
+            target.body_f_ext = wp.zeros(
+                (model.body_count,), dtype=wp.spatial_vector, device=model.device, requires_grad=requires_grad
+            )
             target.body_ft_s = wp.zeros(
                 (model.body_count,), dtype=wp.spatial_vector, device=model.device, requires_grad=requires_grad
             )
@@ -385,7 +388,8 @@ class SolverFeatherstone(SolverBase):
                 particle_f = state_in.particle_f
 
             if state_in.body_count:
-                body_f = state_in.body_f
+                body_f = state_aug.body_f_ext
+                wp.copy(body_f, state_in.body_f)
                 wp.launch(
                     convert_body_force_com_to_origin,
                     dim=model.body_count,
