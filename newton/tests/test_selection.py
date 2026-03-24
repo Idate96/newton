@@ -13,6 +13,22 @@ from newton.solvers import SolverMuJoCo
 from newton.tests.unittest_utils import assert_np_equal
 
 
+def origin_velocity_from_body_qd(model, body_q, body_qd, body_idx):
+    """Recover body-origin velocity from COM-referenced `body_qd`."""
+    rot = wp.quat(
+        float(body_q[body_idx, 3]),
+        float(body_q[body_idx, 4]),
+        float(body_q[body_idx, 5]),
+        float(body_q[body_idx, 6]),
+    )
+    com_local = model.body_com.numpy()[body_idx]
+    com_world = np.array(
+        wp.quat_rotate(rot, wp.vec3(float(com_local[0]), float(com_local[1]), float(com_local[2]))),
+        dtype=np.float32,
+    )
+    return body_qd[body_idx, :3] - np.cross(body_qd[body_idx, 3:6], com_world)
+
+
 class TestSelection(unittest.TestCase):
     def test_no_match(self):
         builder = newton.ModelBuilder()
@@ -325,7 +341,7 @@ class TestSelection(unittest.TestCase):
         body_qd = state.body_qd.numpy().reshape(-1, 6)
 
         origin_vel_fd = (body_q_next[target_slider, :3] - body_q[target_slider, :3]) / dt
-        origin_vel_from_body_qd = body_qd[target_slider, :3]
+        origin_vel_from_body_qd = origin_velocity_from_body_qd(model, body_q, body_qd, target_slider)
 
         assert_np_equal(origin_vel_fd, origin_vel_from_body_qd, tol=5.0e-3)
         self.assertFalse(np.array_equal(body_q[target_base], sentinel_q[target_base]))
