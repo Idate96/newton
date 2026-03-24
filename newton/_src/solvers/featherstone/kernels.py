@@ -418,6 +418,8 @@ def jcalc_tau(
 
 @wp.func
 def jcalc_integrate(
+    joint_X_c: wp.transform,
+    body_com_child: wp.vec3,
     type: int,
     joint_q: wp.array(dtype=float),
     joint_qd: wp.array(dtype=float),
@@ -479,45 +481,49 @@ def jcalc_integrate(
         return
 
     if type == JointType.FREE or type == JointType.DISTANCE:
-        a_s = wp.vec3(joint_qdd[dof_start + 0], joint_qdd[dof_start + 1], joint_qdd[dof_start + 2])
-        m_s = wp.vec3(joint_qdd[dof_start + 3], joint_qdd[dof_start + 4], joint_qdd[dof_start + 5])
+        a_parent = wp.vec3(joint_qdd[dof_start + 0], joint_qdd[dof_start + 1], joint_qdd[dof_start + 2])
+        alpha = wp.vec3(joint_qdd[dof_start + 3], joint_qdd[dof_start + 4], joint_qdd[dof_start + 5])
 
-        v_s = wp.vec3(joint_qd[dof_start + 0], joint_qd[dof_start + 1], joint_qd[dof_start + 2])
-        w_s = wp.vec3(joint_qd[dof_start + 3], joint_qd[dof_start + 4], joint_qd[dof_start + 5])
+        v_parent = wp.vec3(joint_qd[dof_start + 0], joint_qd[dof_start + 1], joint_qd[dof_start + 2])
+        omega = wp.vec3(joint_qd[dof_start + 3], joint_qd[dof_start + 4], joint_qd[dof_start + 5])
 
-        # symplectic Euler
-        w_s = w_s + m_s * dt
-        v_s = v_s + a_s * dt
-
-        p_s = wp.vec3(joint_q[coord_start + 0], joint_q[coord_start + 1], joint_q[coord_start + 2])
-
-        dpdt_s = v_s + wp.cross(w_s, p_s)
-        r_s = wp.quat(
+        p = wp.vec3(joint_q[coord_start + 0], joint_q[coord_start + 1], joint_q[coord_start + 2])
+        r = wp.quat(
             joint_q[coord_start + 3], joint_q[coord_start + 4], joint_q[coord_start + 5], joint_q[coord_start + 6]
         )
 
-        drdt_s = wp.quat(w_s, 0.0) * r_s * 0.5
+        # Integrate the child COM state in the joint parent frame, then map it
+        # back to Featherstone's internal parent-origin twist basis.
+        r_com_joint = wp.transform_point(wp.transform_inverse(joint_X_c), body_com_child)
+        x_com = p + wp.quat_rotate(r, r_com_joint)
+        v_com = v_parent + wp.cross(omega, x_com)
+        a_com = a_parent + wp.cross(alpha, x_com) + wp.cross(omega, v_com)
 
-        # new orientation (normalized)
-        p_s_new = p_s + dpdt_s * dt
-        r_s_new = wp.normalize(r_s + drdt_s * dt)
+        omega_new = omega + alpha * dt
+        v_com_new = v_com + a_com * dt
+
+        drdt = wp.quat(omega_new, 0.0) * r * 0.5
+        r_new = wp.normalize(r + drdt * dt)
+        x_com_new = x_com + v_com_new * dt
+        p_new = x_com_new - wp.quat_rotate(r_new, r_com_joint)
+        v_parent_new = v_com_new - wp.cross(omega_new, x_com_new)
 
         # update transform
-        joint_q_new[coord_start + 0] = p_s_new[0]
-        joint_q_new[coord_start + 1] = p_s_new[1]
-        joint_q_new[coord_start + 2] = p_s_new[2]
+        joint_q_new[coord_start + 0] = p_new[0]
+        joint_q_new[coord_start + 1] = p_new[1]
+        joint_q_new[coord_start + 2] = p_new[2]
 
-        joint_q_new[coord_start + 3] = r_s_new[0]
-        joint_q_new[coord_start + 4] = r_s_new[1]
-        joint_q_new[coord_start + 5] = r_s_new[2]
-        joint_q_new[coord_start + 6] = r_s_new[3]
+        joint_q_new[coord_start + 3] = r_new[0]
+        joint_q_new[coord_start + 4] = r_new[1]
+        joint_q_new[coord_start + 5] = r_new[2]
+        joint_q_new[coord_start + 6] = r_new[3]
 
-        joint_qd_new[dof_start + 0] = v_s[0]
-        joint_qd_new[dof_start + 1] = v_s[1]
-        joint_qd_new[dof_start + 2] = v_s[2]
-        joint_qd_new[dof_start + 3] = w_s[0]
-        joint_qd_new[dof_start + 4] = w_s[1]
-        joint_qd_new[dof_start + 5] = w_s[2]
+        joint_qd_new[dof_start + 0] = v_parent_new[0]
+        joint_qd_new[dof_start + 1] = v_parent_new[1]
+        joint_qd_new[dof_start + 2] = v_parent_new[2]
+        joint_qd_new[dof_start + 3] = omega_new[0]
+        joint_qd_new[dof_start + 4] = omega_new[1]
+        joint_qd_new[dof_start + 5] = omega_new[2]
 
         return
 
@@ -1515,9 +1521,12 @@ def eval_dense_solve_batched(
 @wp.kernel
 def integrate_generalized_joints(
     joint_type: wp.array(dtype=int),
+    joint_child: wp.array(dtype=int),
     joint_q_start: wp.array(dtype=int),
     joint_qd_start: wp.array(dtype=int),
     joint_dof_dim: wp.array(dtype=int, ndim=2),
+    joint_X_c: wp.array(dtype=wp.transform),
+    body_com: wp.array(dtype=wp.vec3),
     joint_q: wp.array(dtype=float),
     joint_qd: wp.array(dtype=float),
     joint_qdd: wp.array(dtype=float),
@@ -1530,12 +1539,15 @@ def integrate_generalized_joints(
     index = wp.tid()
 
     type = joint_type[index]
+    child = joint_child[index]
     coord_start = joint_q_start[index]
     dof_start = joint_qd_start[index]
     lin_axis_count = joint_dof_dim[index, 0]
     ang_axis_count = joint_dof_dim[index, 1]
 
     jcalc_integrate(
+        joint_X_c[index],
+        body_com[child],
         type,
         joint_q,
         joint_qd,

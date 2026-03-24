@@ -556,7 +556,7 @@ com_solvers = {
     "featherstone": (
         lambda model: newton.solvers.SolverFeatherstone(model),
         1e-3,
-        False,  # Root combined force+torque CoM tests still fail; pure-force CoM tests are covered below.
+        True,
     ),
 }
 
@@ -617,16 +617,15 @@ for device in devices:
                     com_offset=com_offset,
                     use_control=False,
                 )
-                if solver_name != "featherstone":
-                    add_function_test(
-                        TestBodyForce,
-                        f"test_combined_force_torque_joint_f_{solver_name}_com{i}",
-                        test_combined_force_torque,
-                        devices=[device],
-                        solver_fn=solver_fn,
-                        com_offset=com_offset,
-                        use_control=True,
-                    )
+                add_function_test(
+                    TestBodyForce,
+                    f"test_combined_force_torque_joint_f_{solver_name}_com{i}",
+                    test_combined_force_torque,
+                    devices=[device],
+                    solver_fn=solver_fn,
+                    com_offset=com_offset,
+                    use_control=True,
+                )
 
 for device in devices:
     for solver_name in ("xpbd", "featherstone"):
