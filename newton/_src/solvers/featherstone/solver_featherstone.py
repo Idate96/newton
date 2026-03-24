@@ -5,7 +5,7 @@ import numpy as np
 import warp as wp
 
 from ...core.types import override
-from ...sim import BodyFlags, Contacts, Control, Model, State
+from ...sim import BodyFlags, Contacts, Control, JointType, Model, State
 from ..flags import SolverNotifyFlags
 from ..semi_implicit.kernels_contact import (
     eval_body_contact,
@@ -155,11 +155,18 @@ class SolverFeatherstone(SolverBase):
             wp.load_module(device=wp.get_device())
 
     def _update_kinematic_state(self):
-        """Recompute cached kinematic body/joint flags and effective armature."""
+        """Recompute cached solver flags and effective joint armature."""
         model = self.model
         self.has_kinematic_bodies = False
         self.has_kinematic_joints = False
+        self.has_descendant_free_distance_joints = False
         self.joint_armature_effective = model.joint_armature
+        if model.joint_count:
+            joint_type = model.joint_type.numpy()
+            joint_parent = model.joint_parent.numpy()
+            free_distance_mask = (joint_type == int(JointType.FREE)) | (joint_type == int(JointType.DISTANCE))
+            self.has_descendant_free_distance_joints = bool(np.any(free_distance_mask & (joint_parent >= 0)))
+
         if model.body_count:
             body_flags = model.body_flags.numpy()
             kinematic_mask = (body_flags & int(BodyFlags.KINEMATIC)) != 0
@@ -818,29 +825,35 @@ class SolverFeatherstone(SolverBase):
                 # update maximal coordinates using FK with velocity conversion
                 eval_fk_with_velocity_conversion(model, state_out.joint_q, state_aug.joint_qd_internal_out, state_out)
 
-                wp.launch(
-                    correct_free_distance_joint_pose_from_world_twist,
-                    dim=model.articulation_count,
-                    inputs=[
-                        model.articulation_start,
-                        model.joint_type,
-                        model.joint_parent,
-                        model.joint_child,
-                        model.joint_q_start,
-                        model.joint_X_p,
-                        model.joint_X_c,
-                        model.body_com,
-                        state_in.body_q,
-                        state_out.body_qd,
-                        state_out.joint_q,
-                        state_out.body_q,
-                        dt,
-                    ],
-                    device=model.device,
-                )
+                if self.has_descendant_free_distance_joints:
+                    # Descendant FREE/DISTANCE joints still advance in Featherstone's
+                    # internal parent-origin coordinates, so once the parent end-step
+                    # pose is known we correct their relative pose and rerun FK.
+                    wp.launch(
+                        correct_free_distance_joint_pose_from_world_twist,
+                        dim=model.articulation_count,
+                        inputs=[
+                            model.articulation_start,
+                            model.joint_type,
+                            model.joint_parent,
+                            model.joint_child,
+                            model.joint_q_start,
+                            model.joint_X_p,
+                            model.joint_X_c,
+                            model.body_com,
+                            state_in.body_q,
+                            state_out.body_qd,
+                            state_out.joint_q,
+                            state_out.body_q,
+                            dt,
+                        ],
+                        device=model.device,
+                    )
 
-                # Refresh body state from the corrected FREE/DISTANCE poses.
-                eval_fk_with_velocity_conversion(model, state_out.joint_q, state_aug.joint_qd_internal_out, state_out)
+                    # Refresh body state from the corrected descendant poses.
+                    eval_fk_with_velocity_conversion(
+                        model, state_out.joint_q, state_aug.joint_qd_internal_out, state_out
+                    )
 
                 wp.launch(
                     convert_free_distance_joint_qd_internal_to_public,

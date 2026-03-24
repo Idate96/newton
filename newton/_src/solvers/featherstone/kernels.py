@@ -531,9 +531,10 @@ def jcalc_integrate(
         v_s = wp.vec3(joint_qd[dof_start + 0], joint_qd[dof_start + 1], joint_qd[dof_start + 2])
         w_s = wp.vec3(joint_qd[dof_start + 3], joint_qd[dof_start + 4], joint_qd[dof_start + 5])
 
-        # Symplectic Euler on the internal descendant FREE/DISTANCE state. A
-        # world-pose correction pass runs later once the parent end-step motion
-        # is known.
+        # Descendants stay in Featherstone's internal parent-origin coordinates
+        # during the integrator step. Once the parent end-step pose is known, a
+        # later correction pass reconstructs the descendant relative pose from
+        # the published end-step world twist.
         w_s = w_s + m_s * dt
         v_s = v_s + a_s * dt
 
@@ -657,7 +658,7 @@ def eval_rigid_fk(
     body_q: wp.array(dtype=wp.transform),
     body_q_com: wp.array(dtype=wp.transform),
 ):
-    # one thread per-articulation
+    # one thread per joint
     index = wp.tid()
 
     start = articulation_start[index]
@@ -1658,9 +1659,7 @@ def correct_free_distance_joint_pose_from_world_twist(
 
         X_wb_new = integrate_body_pose_from_com_twist(body_q_in[child], body_com[child], body_qd_out[child], dt)
 
-        X_wpj_new = joint_X_p[i]
-        if parent >= 0:
-            X_wpj_new = body_q_out[parent] * X_wpj_new
+        X_wpj_new = body_q_out[parent] * joint_X_p[i]
 
         X_wcj_new = X_wb_new * joint_X_c[i]
         X_j_new = wp.transform_inverse(X_wpj_new) * X_wcj_new
