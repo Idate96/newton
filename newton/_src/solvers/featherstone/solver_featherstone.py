@@ -317,6 +317,7 @@ class SolverFeatherstone(SolverBase):
             )
 
             # derived rigid body data (maximal coordinates)
+            target.body_q_prev = wp.empty_like(model.body_q, requires_grad=requires_grad)
             target.body_q_com = wp.empty_like(model.body_q, requires_grad=requires_grad)
             target.body_I_s = wp.empty(
                 (model.body_count,), dtype=wp.spatial_matrix, device=model.device, requires_grad=requires_grad
@@ -349,6 +350,7 @@ class SolverFeatherstone(SolverBase):
         dt: float,
     ) -> None:
         requires_grad = state_in.requires_grad
+        step_in_place = state_in is state_out
 
         # optionally create dynamical auxiliary variables
         if requires_grad:
@@ -357,6 +359,7 @@ class SolverFeatherstone(SolverBase):
             state_aug = self
 
         model = self.model
+        descendant_body_q_prev = state_in.body_q
 
         if not getattr(state_aug, "_featherstone_augmented", False):
             self._allocate_state_aux_vars(model, state_aug, requires_grad)
@@ -388,6 +391,9 @@ class SolverFeatherstone(SolverBase):
                     outputs=[state_in.body_q, state_aug.body_q_com],
                     device=model.device,
                 )
+                if self.has_descendant_free_distance_joints and step_in_place:
+                    wp.copy(state_aug.body_q_prev, state_in.body_q)
+                    descendant_body_q_prev = state_aug.body_q_prev
 
             particle_f = None
             body_f = None
@@ -841,7 +847,7 @@ class SolverFeatherstone(SolverBase):
                             model.joint_X_p,
                             model.joint_X_c,
                             model.body_com,
-                            state_in.body_q,
+                            descendant_body_q_prev,
                             state_out.body_qd,
                             state_out.joint_q,
                             state_out.body_q,
