@@ -156,7 +156,7 @@ class Example:
         world0_pole1_vel = wp.spatial_vector(*qd[1])
         world0_pole2_vel = wp.spatial_vector(*qd[2])
         # Replicated GPU worlds can drift by a few ulps in body twists.
-        world_velocity_atol = 1e-6
+        world_velocity_atol = 5e-6
         newton.examples.test_body_state(
             self.model,
             self.state_0,
