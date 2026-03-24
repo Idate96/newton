@@ -296,20 +296,61 @@ def test_combined_velocity(
     test.assertLess(quat_diff, 0.9999, "Body should have rotated")
 
 
+def test_featherstone_free_descendant_joint_qd_round_trip_under_rotated_parent(
+    test: TestBodyVelocity,
+    device,
+):
+    """Featherstone should preserve descendant FREE joint_qd in parent-frame coordinates."""
+    builder = newton.ModelBuilder(gravity=0.0, up_axis=newton.Axis.Y)
+    parent = builder.add_link(mass=1.0)
+    child = builder.add_link(mass=1.0)
+    builder.body_com[child] = wp.vec3(0.2, 0.0, 0.0)
+    builder.add_shape_sphere(parent, radius=0.1)
+    builder.add_shape_sphere(child, radius=0.1)
+
+    j0 = builder.add_joint_revolute(parent=-1, child=parent, axis=newton.Axis.Z)
+    j1 = builder.add_joint_free(
+        parent=parent,
+        child=child,
+        parent_xform=wp.transform(wp.vec3(1.0, 0.0, 0.0), wp.quat_identity()),
+    )
+    builder.add_articulation([j0, j1])
+
+    model = builder.finalize(device=device)
+    solver = newton.solvers.SolverFeatherstone(model, angular_damping=0.0)
+    state_0 = model.state()
+    state_1 = model.state()
+
+    q = state_0.joint_q.numpy()
+    qd = state_0.joint_qd.numpy()
+    q[:] = 0.0
+    q[0] = np.pi / 2.0
+    q[4:8] = np.array([0.0, 0.0, 0.0, 1.0], dtype=np.float32)
+    qd[:] = 0.0
+    qd[1:7] = np.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
+    state_0.joint_q.assign(q)
+    state_0.joint_qd.assign(qd)
+    newton.eval_fk(model, state_0.joint_q, state_0.joint_qd, state_0)
+
+    solver.step(state_0, state_1, model.control(), None, 0.01)
+
+    np.testing.assert_allclose(state_1.joint_qd.numpy()[1:7], qd[1:7], atol=1.0e-6, rtol=1.0e-6)
+    np.testing.assert_allclose(
+        state_1.body_qd.numpy()[child],
+        np.array([0.0, 1.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32),
+        atol=1.0e-5,
+        rtol=1.0e-6,
+    )
+
+
 devices = get_test_devices()
 
 solvers = {
-    # NOTE: Featherstone currently has issues with angular velocity and non-zero CoM offsets.
-    # The Featherstone algorithm uses body origin velocity internally, and while we have
-    # conversion kernels at the solver boundary, the dynamics equations don't correctly
-    # compute the centripetal acceleration needed to keep the CoM stationary when rotating.
-    # Linear velocity tests pass, but angular velocity tests fail.
-    # This requires deeper changes to the Featherstone algorithm.
-    # "featherstone": (
-    #     lambda model: newton.solvers.SolverFeatherstone(model, angular_damping=0.0),
-    #     True,
-    #     1e-3,
-    # ),
+    "featherstone": (
+        lambda model: newton.solvers.SolverFeatherstone(model, angular_damping=0.0),
+        True,
+        1e-3,  # Internal free-joint speeds differ, but the public boundary is COM-based.
+    ),
     "mujoco_cpu": (
         lambda model: newton.solvers.SolverMuJoCo(model, use_mujoco_cpu=True, disable_contacts=True),
         True,
@@ -399,6 +440,13 @@ for device in devices:
                 com_offset=com_offset,
                 tolerance=tolerance,
             )
+
+    add_function_test(
+        TestBodyVelocity,
+        "test_featherstone_free_descendant_joint_qd_round_trip_under_rotated_parent",
+        test_featherstone_free_descendant_joint_qd_round_trip_under_rotated_parent,
+        devices=[device],
+    )
 
 
 if __name__ == "__main__":
