@@ -556,7 +556,7 @@ com_solvers = {
     "featherstone": (
         lambda model: newton.solvers.SolverFeatherstone(model),
         1e-3,
-        False,  # Does NOT support torque-CoM tests - uses body origin coordinates internally
+        False,  # Root combined force+torque CoM tests still fail; pure-force CoM tests are covered below.
     ),
 }
 
@@ -593,17 +593,16 @@ for device in devices:
                     force_direction=force_dir,
                     use_control=False,
                 )
-                if solver_name != "featherstone":
-                    add_function_test(
-                        TestBodyForce,
-                        f"test_force_no_rotation_joint_f_{solver_name}_com{i}_force{j}",
-                        test_force_no_rotation,
-                        devices=[device],
-                        solver_fn=solver_fn,
-                        com_offset=com_offset,
-                        force_direction=force_dir,
-                        use_control=True,
-                    )
+                add_function_test(
+                    TestBodyForce,
+                    f"test_force_no_rotation_joint_f_{solver_name}_com{i}_force{j}",
+                    test_force_no_rotation,
+                    devices=[device],
+                    solver_fn=solver_fn,
+                    com_offset=com_offset,
+                    force_direction=force_dir,
+                    use_control=True,
+                )
 
         # Test combined force and torque with CoM offset
         # Only for solvers that correctly handle torque with CoM offset
