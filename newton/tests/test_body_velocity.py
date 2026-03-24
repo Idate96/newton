@@ -605,12 +605,12 @@ def test_featherstone_free_distance_descendant_matches_ping_pong_when_stepping_i
     )
 
 
-def test_featherstone_free_distance_descendant_step_does_not_require_manual_pre_fk(
+def test_featherstone_free_distance_descendant_correction_path_refreshes_stale_body_pose(
     test: TestBodyVelocity,
     device,
     joint_type,
 ):
-    """Stepping from generalized state should match stepping from the same state after FK refresh."""
+    """The descendant FREE/DISTANCE correction path should ignore stale body poses."""
     model, _base, child, j0, j1 = _build_rotated_anchor_descendant_model(
         device=device,
         joint_type=joint_type,
@@ -816,8 +816,8 @@ for device in devices:
         )
         add_function_test(
             TestBodyVelocity,
-            f"test_featherstone_{joint_name}_descendant_step_does_not_require_manual_pre_fk",
-            test_featherstone_free_distance_descendant_step_does_not_require_manual_pre_fk,
+            f"test_featherstone_{joint_name}_descendant_correction_path_refreshes_stale_body_pose",
+            test_featherstone_free_distance_descendant_correction_path_refreshes_stale_body_pose,
             devices=[device],
             joint_type=joint_type,
         )
