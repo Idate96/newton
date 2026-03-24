@@ -31,6 +31,7 @@ from .kernels import (
     convert_free_distance_joint_qd_internal_to_public,
     convert_free_distance_joint_qd_public_to_internal,
     copy_kinematic_joint_state,
+    correct_free_distance_joint_pose_from_world_twist,
     create_inertia_matrix_cholesky_kernel,
     create_inertia_matrix_kernel,
     eval_dense_cholesky_batched,
@@ -782,6 +783,7 @@ class SolverFeatherstone(SolverBase):
                     dim=model.joint_count,
                     inputs=[
                         model.joint_type,
+                        model.joint_parent,
                         model.joint_child,
                         model.joint_q_start,
                         model.joint_qd_start,
@@ -814,6 +816,30 @@ class SolverFeatherstone(SolverBase):
                     )
 
                 # update maximal coordinates using FK with velocity conversion
+                eval_fk_with_velocity_conversion(model, state_out.joint_q, state_aug.joint_qd_internal_out, state_out)
+
+                wp.launch(
+                    correct_free_distance_joint_pose_from_world_twist,
+                    dim=model.articulation_count,
+                    inputs=[
+                        model.articulation_start,
+                        model.joint_type,
+                        model.joint_parent,
+                        model.joint_child,
+                        model.joint_q_start,
+                        model.joint_X_p,
+                        model.joint_X_c,
+                        model.body_com,
+                        state_in.body_q,
+                        state_out.body_qd,
+                        state_out.joint_q,
+                        state_out.body_q,
+                        dt,
+                    ],
+                    device=model.device,
+                )
+
+                # Refresh body state from the corrected FREE/DISTANCE poses.
                 eval_fk_with_velocity_conversion(model, state_out.joint_q, state_aug.joint_qd_internal_out, state_out)
 
                 wp.launch(

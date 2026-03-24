@@ -472,6 +472,67 @@ def test_featherstone_free_distance_descendant_angular_velocity_keeps_com_statio
     )
 
 
+def test_featherstone_free_distance_descendant_stays_inertial_under_parent_torque(
+    test: TestBodyVelocity,
+    device,
+    joint_type,
+):
+    """A FREE/DISTANCE descendant should stay inertial in world space while its parent accelerates."""
+    model, base, child, j0, j1 = _build_rotated_anchor_descendant_model(
+        device=device,
+        joint_type=joint_type,
+        parent_kinematic=False,
+    )
+    solver = newton.solvers.SolverFeatherstone(model, angular_damping=0.0)
+    state_0 = model.state()
+    state_1 = model.state()
+    control = model.control()
+
+    q = model.joint_q.numpy().copy()
+    qd = model.joint_qd.numpy().copy()
+    joint_f = control.joint_f.numpy().copy()
+    q_start = model.joint_q_start.numpy()
+    qd_start = model.joint_qd_start.numpy()
+
+    q[q_start[j1] : q_start[j1] + 3] = np.array([0.4, -0.25, 0.3], dtype=np.float32)
+    q_child_rot = wp.quat_from_axis_angle(wp.normalize(wp.vec3(1.0, 0.5, -0.2)), 0.35)
+    q[q_start[j1] + 3 : q_start[j1] + 7] = np.array(
+        [q_child_rot[0], q_child_rot[1], q_child_rot[2], q_child_rot[3]],
+        dtype=np.float32,
+    )
+    qd[:] = 0.0
+    joint_f[:] = 0.0
+    joint_f[qd_start[j0]] = 7.5
+
+    state_0.joint_q.assign(q)
+    state_0.joint_qd.assign(qd)
+    control.joint_f.assign(joint_f)
+    newton.eval_fk(model, state_0.joint_q, state_0.joint_qd, state_0)
+
+    child_q_initial = state_0.body_q.numpy()[child].copy()
+
+    solver.step(state_0, state_1, control, None, 0.01)
+
+    base_qd = state_1.body_qd.numpy()[base]
+    test.assertGreater(np.linalg.norm(base_qd[3:]), 1.0e-2, "Parent torque did not drive the base as intended")
+
+    child_qd = state_1.body_qd.numpy()[child]
+    np.testing.assert_allclose(child_qd, np.zeros(6, dtype=np.float32), atol=3.0e-4, rtol=1.0e-6)
+
+    child_q_final = state_1.body_q.numpy()[child]
+    np.testing.assert_allclose(child_q_final[:3], child_q_initial[:3], atol=1.0e-5, rtol=1.0e-6)
+
+    quat_dot = abs(np.dot(child_q_initial[3:7], child_q_final[3:7]))
+    test.assertGreater(quat_dot, 1.0 - 1.0e-5, f"{_joint_type_name(joint_type)} child orientation drifted in world")
+
+    child_joint_qd = state_1.joint_qd.numpy()[qd_start[j1] : qd_start[j1] + 6]
+    test.assertGreater(
+        np.linalg.norm(child_joint_qd),
+        1.0e-1,
+        "Descendant joint state did not pick up the compensating relative motion",
+    )
+
+
 devices = get_test_devices()
 
 solvers = {
@@ -582,6 +643,13 @@ for device in devices:
             TestBodyVelocity,
             f"test_featherstone_{joint_name}_descendant_angular_velocity_keeps_com_stationary_with_rotated_anchors",
             test_featherstone_free_distance_descendant_angular_velocity_keeps_com_stationary_with_rotated_anchors,
+            devices=[device],
+            joint_type=joint_type,
+        )
+        add_function_test(
+            TestBodyVelocity,
+            f"test_featherstone_{joint_name}_descendant_stays_inertial_under_parent_torque",
+            test_featherstone_free_distance_descendant_stays_inertial_under_parent_torque,
             devices=[device],
             joint_type=joint_type,
         )
